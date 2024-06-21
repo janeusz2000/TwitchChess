@@ -3,17 +3,60 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebSocket Client</title>
+    <title>WebSocket Chess Client</title>
+    <style>
+        #progress-container {
+            width: 100%;
+            background-color: #f3f3f3;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+        #progress-bar {
+            height: 20px;
+            background-color: #4caf50;
+            width: 100%;
+            text-align: center;
+            line-height: 20px;
+            color: white;
+        }
+        #board {
+            width: 400px;
+            margin: 20px auto;
+        }
+    </style>
+    <link rel="stylesheet" href="chessboardjs/website/releases/0.3.0/css/chessboard-0.3.0.css">
 </head>
 <body>
     <div id="status">Connecting...</div>
+    <div id="timer"></div>
+    <div id="progress-container">
+        <div id="progress-bar">100%</div>
+    </div>
+    <div id="board"></div>
     <div id="messages"></div>
+
+    <script src="chessboardjs/website/releases/0.3.0/js/chessboard-0.3.0.min.js"></script>
+    <script src="chessboardjs/website/releases/0.3.0/js/chessboard-0.3.0.js"></script>
 
     <script>
         let socket;
         const statusDiv = document.getElementById('status');
+        const timerDiv = document.getElementById('timer');
+        const progressBar = document.getElementById('progress-bar');
         const messagesDiv = document.getElementById('messages');
         const reconnectInterval = 5000; // 5 seconds
+        let initialDuration = 60; // Default initial duration
+
+        // Initialize chessboard and game
+        const board = Chessboard('board', {
+            draggable: true,
+            dropOffBoard: 'trash',
+            sparePieces: false,
+            onDrop: handleMove
+        });
+        const game = new Chess();
 
         function connect() {
             socket = new WebSocket('ws://localhost:8080/ws');
@@ -25,7 +68,22 @@
 
             socket.onmessage = (event) => {
                 const message = JSON.parse(event.data);
-                messagesDiv.textContent += `\nReceived message: ${JSON.stringify(message)}`;
+                if (message.currentPhase === 'voting') {
+                    timerDiv.textContent = `Time remaining: ${message.timer} seconds`;
+                    if (message.timer === initialDuration) {
+                        initialDuration = message.timer; // Set initial duration if provided by the server
+                    }
+                    updateProgressBar(message.timer);
+                } else if (message.from && message.to) {
+                    messagesDiv.textContent += `\nMove selected: ${message.from} to ${message.to}`;
+                    game.move({ from: message.from, to: message.to });
+                    board.position(game.fen());
+                } else {
+                    statusDiv.textContent = `Current phase: ${message.currentPhase}`;
+                    timerDiv.textContent = '';
+                    progressBar.style.width = '100%';
+                    progressBar.textContent = '100%';
+                }
                 console.log('Received message:', message);
             };
 
@@ -40,6 +98,45 @@
                 console.error('WebSocket error:', error);
                 socket.close();
             };
+        }
+
+        function updateProgressBar(timer) {
+            const percentage = (timer / initialDuration) * 100;
+            progressBar.style.width = `${percentage}%`;
+            progressBar.textContent = `${Math.round(percentage)}%`;
+        }
+
+        function handleMove(source, target) {
+            const move = game.move({
+                from: source,
+                to: target,
+                promotion: 'q' // NOTE: always promote to a queen for simplicity
+            });
+
+            // Illegal move
+            if (move === null) return 'snapback';
+
+            board.position(game.fen());
+
+            // Send move to server
+            sendMove(source, target);
+        }
+
+        async function sendMove(source, target) {
+            const moveData = { from: source, to: target };
+            const response = await fetch('http://localhost:8080/submit-move', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(moveData)
+            });
+
+            if (response.ok) {
+                const responseText = await response.text();
+                console.log(`Move ${source}${target} submitted successfully: ${responseText}`);
+            } else {
+                const responseText = await response.text();
+                console.error(`Failed to submit move ${source}${target}: ${responseText}`);
+            }
         }
 
         connect();

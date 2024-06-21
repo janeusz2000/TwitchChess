@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
@@ -17,6 +18,7 @@ type Move struct {
 
 type Phase struct {
 	CurrentPhase string `json:"currentPhase"`
+	Timer        int    `json:"timer,omitempty"`
 }
 
 var (
@@ -32,23 +34,10 @@ var (
 	}
 )
 
-func main() {
-	r := mux.NewRouter()
-	r.HandleFunc("/start-voting", startVotingHandler).Methods("POST")
-	r.HandleFunc("/submit-move", submitMoveHandler).Methods("POST")
-	r.HandleFunc("/end-voting", endVotingHandler).Methods("POST")
-	r.HandleFunc("/ws", handleConnections)
-	r.HandleFunc("/connected-clients", connectedClientsHandler).Methods("GET")
-
-	votingPhase = false
-
-	go handleMessages()
-
-	log.Println("Starting server on :8080...")
-	log.Fatal(http.ListenAndServe(":8080", r))
-}
-
 func startVotingHandler(w http.ResponseWriter, r *http.Request) {
+  log.Printf("startVotingHandler invoked()")
+	duration := 60 // Default duration in seconds
+
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -60,11 +49,28 @@ func startVotingHandler(w http.ResponseWriter, r *http.Request) {
 	votingPhase = true
 	moves = []Move{}
 
-	phase := Phase{CurrentPhase: "voting"}
+	phase := Phase{CurrentPhase: "voting", Timer: duration}
 	broadcast <- phase
+
+	go startVotingTimer(duration)
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Voting phase started"))
+}
+
+func startVotingTimer(duration int) {
+	for i := duration; i > 0; i-- {
+		time.Sleep(1 * time.Second)
+		mu.Lock()
+		if !votingPhase {
+			mu.Unlock()
+			return
+		}
+		phase := Phase{CurrentPhase: "voting", Timer: i - 1}
+		broadcast <- phase
+		mu.Unlock()
+	}
+	endVotingPhase()
 }
 
 func submitMoveHandler(w http.ResponseWriter, r *http.Request) {
@@ -98,22 +104,51 @@ func endVotingHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	endVotingPhase()
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Voting phase ended"))
+}
+
+func endVotingPhase() {
 	votingPhase = false
 
 	if len(moves) == 0 {
-		http.Error(w, "No moves to process", http.StatusBadRequest)
+		broadcast <- Phase{CurrentPhase: "idle"}
 		return
 	}
 
-  // TODO: Select the most frequent move here:
-	selectedMove := moves[0]
-  log.Printf("Temporary move selected: %s", selectedMove);
+	// Calculate the most frequent move
+	moveCount := make(map[Move]int)
+	for _, move := range moves {
+		moveCount[move]++
+	}
 
-	phase := Phase{CurrentPhase: "idle"}
-	broadcast <- phase
+	var mostFrequentMove Move
+	maxCount := 0
+	for move, count := range moveCount {
+		if count > maxCount {
+			mostFrequentMove = move
+			maxCount = count
+		}
+	}
 
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Voting phase ended. Move selected: " + selectedMove.From + " to " + selectedMove.To))
+  // TODO: Apply most frequent move to the chessboard.
+  // TODO: Check if move is valid
+
+	broadcast <- Phase{CurrentPhase: "idle"}
+	broadcastMove(mostFrequentMove)
+}
+
+func broadcastMove(move Move) {
+	for client := range clients {
+		err := client.WriteJSON(move)
+		if err != nil {
+			log.Printf("WebSocket error: %v", err)
+			client.Close()
+			delete(clients, client)
+		}
+	}
 }
 
 func handleConnections(w http.ResponseWriter, r *http.Request) {
@@ -176,6 +211,24 @@ func connectedClientsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func applyMoveToChessboard(move Move) {
-	// You need to implement this function to apply the move to your chessboard
-	// This could involve updating your chessboard data structure and notifying any clients
+  // TODO: implement a chessboard here
 }
+
+func main() {
+	r := mux.NewRouter()
+	r.HandleFunc("/start-voting", startVotingHandler).Methods("POST")
+	r.HandleFunc("/submit-move", submitMoveHandler).Methods("POST")
+	r.HandleFunc("/end-voting", endVotingHandler).Methods("POST")
+	r.HandleFunc("/ws", handleConnections)
+	r.HandleFunc("/connected-clients", connectedClientsHandler).Methods("GET")
+  // TODO: send move by ws client
+
+
+	votingPhase = false
+
+	go handleMessages()
+
+	log.Println("Starting server on :8080...")
+	log.Fatal(http.ListenAndServe(":8080", r))
+}
+
