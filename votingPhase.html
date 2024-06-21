@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Client</title>
+</head>
+<body>
+    <div id="status">Connecting...</div>
+    <div id="messages"></div>
+
+    <script>
+        let socket;
+        const statusDiv = document.getElementById('status');
+        const messagesDiv = document.getElementById('messages');
+        const reconnectInterval = 5000; // 5 seconds
+
+        function connect() {
+            socket = new WebSocket('ws://localhost:8080/ws');
+
+            socket.onopen = () => {
+                statusDiv.textContent = 'Connected to the WebSocket server';
+                console.log('Connected to the WebSocket server');
+            };
+
+            socket.onmessage = (event) => {
+                const message = JSON.parse(event.data);
+                messagesDiv.textContent += `\nReceived message: ${JSON.stringify(message)}`;
+                console.log('Received message:', message);
+            };
+
+            socket.onclose = () => {
+                statusDiv.textContent = 'Disconnected. Trying to reconnect...';
+                console.log('Disconnected from the WebSocket server. Trying to reconnect...');
+                setTimeout(connect, reconnectInterval);
+            };
+
+            socket.onerror = (error) => {
+                statusDiv.textContent = 'WebSocket error. Trying to reconnect...';
+                console.error('WebSocket error:', error);
+                socket.close();
+            };
+        }
+
+        connect();
+    </script>
+</body>
+</html>
