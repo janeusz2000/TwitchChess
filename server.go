@@ -9,6 +9,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
+	"github.com/rs/cors"
 )
 
 type Move struct {
@@ -35,8 +36,7 @@ var (
 )
 
 func startVotingHandler(w http.ResponseWriter, r *http.Request) {
-  log.Printf("startVotingHandler invoked()")
-	duration := 60 // Default duration in seconds
+	duration := 15
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -73,10 +73,27 @@ func startVotingTimer(duration int) {
 	endVotingPhase()
 }
 
-func submitMoveHandler(w http.ResponseWriter, r *http.Request) {
+func wsClientMoveHandler(w http.ResponseWriter, r *http.Request) {
 	mu.Lock()
 	defer mu.Unlock()
 
+
+	var move Move
+	err := json.NewDecoder(r.Body).Decode(&move)
+	if err != nil {
+		http.Error(w, "Invalid move", http.StatusBadRequest)
+		return
+	}
+
+  applyMoveToChessboard(move);
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Move submitted"))
+}
+
+func submitMoveHandler(w http.ResponseWriter, r *http.Request) {
+	mu.Lock()
+	defer mu.Unlock()
 	if !votingPhase {
 		http.Error(w, "Voting phase not started", http.StatusBadRequest)
 		return
@@ -132,9 +149,6 @@ func endVotingPhase() {
 			maxCount = count
 		}
 	}
-
-  // TODO: Apply most frequent move to the chessboard.
-  // TODO: Check if move is valid
 
 	broadcast <- Phase{CurrentPhase: "idle"}
 	broadcastMove(mostFrequentMove)
@@ -211,7 +225,8 @@ func connectedClientsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func applyMoveToChessboard(move Move) {
-  // TODO: implement a chessboard here
+  log.Printf("move applied: %s", move)
+	// TODO: implement a chessboard here
 }
 
 func main() {
@@ -220,15 +235,23 @@ func main() {
 	r.HandleFunc("/submit-move", submitMoveHandler).Methods("POST")
 	r.HandleFunc("/end-voting", endVotingHandler).Methods("POST")
 	r.HandleFunc("/ws", handleConnections)
+  r.HandleFunc("/ws-client-move", wsClientMoveHandler).Methods("POST")
 	r.HandleFunc("/connected-clients", connectedClientsHandler).Methods("GET")
-  // TODO: send move by ws client
 
+	// Use CORS middleware
+	c := cors.New(cors.Options{
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{"GET", "POST"},
+		AllowedHeaders:   []string{"Content-Type"},
+		AllowCredentials: true,
+	})
+
+	handler := c.Handler(r)
 
 	votingPhase = false
 
 	go handleMessages()
 
 	log.Println("Starting server on :8080...")
-	log.Fatal(http.ListenAndServe(":8080", r))
+	log.Fatal(http.ListenAndServe(":8080", handler))
 }
-

@@ -1,3 +1,4 @@
+import argparse
 import aiohttp
 import asyncio
 import json
@@ -13,7 +14,7 @@ def create_url(api: str):
 
 
 async def start_voting_phase():
-    url = create_url('start-voting')
+    url = create_url("start-voting")
 
     async with aiohttp.ClientSession() as session:
         async with session.post(url) as response:
@@ -28,7 +29,7 @@ async def start_voting_phase():
 
 
 async def send_move(move: str):
-    url = create_url('submit-move')
+    url = create_url("submit-move")
     headers = {"Content-Type": "application/json"}
     move_data = {"from": move[:2], "to": move[2:]}
 
@@ -47,5 +48,15 @@ async def send_move(move: str):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="A simple example to demonstrate argument flags"
+    )
+    parser.add_argument(
+            "--move", "-c", type=str, default="e4e5", help="move to vote"
+    )
+
+    args = parser.parse_args()
     asyncio.run(start_voting_phase())
-    asyncio.run(send_move('d2d4'))
+
+    print(f"Sending move: {args.move}")
+    asyncio.run(send_move(args.move))
