@@ -1,11 +1,15 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from "react";
 
-export const useWebSocket = (url: string, reconnectInterval: number, initialDuration: number, handleMove: (from: string, to: string) => void) => {
+export const useWebSocket = (
+  url: string,
+  reconnectInterval: number,
+  initialDuration: number,
+  handleMove: (from: string, to: string) => void,
+) => {
   const [status, setStatus] = useState<boolean>(false);
   const [timer, setTimer] = useState<string>("");
   const [progressVisible, setProgressVisible] = useState<boolean>(false);
   const [progress, setProgress] = useState<number>(100);
-  const [messages, setMessages] = useState<string[]>([]);
   const socketRef = useRef<WebSocket | null>(null);
 
   const connect = useCallback(() => {
@@ -33,11 +37,6 @@ export const useWebSocket = (url: string, reconnectInterval: number, initialDura
         }
         updateProgressBar(message.timer);
       } else if (message.from && message.to) {
-        setMessages((prevMessages) => [
-          ...prevMessages,
-          `Move selected: ${message.from} to ${message.to}`,
-        ]);
-
         try {
           handleMove(message.from, message.to);
         } catch (error) {
@@ -84,5 +83,5 @@ export const useWebSocket = (url: string, reconnectInterval: number, initialDura
     setProgress(percentage);
   };
 
-  return { status, timer, progress, progressVisible, messages };
+  return { status, timer, progress, progressVisible };
 };

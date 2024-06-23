@@ -1,7 +1,10 @@
-import { useState } from 'react';
-import { Chess } from 'chess.js';
+import { useState } from "react";
+import { Chess } from "chess.js";
 
-export const useChessGame = () => {
+export const useChessGame = (
+  messages: Array<string>,
+  setMessages: (messages: Array<string>) => void,
+) => {
   const [game, setGame] = useState(new Chess());
 
   const handleMove = (source: string, target: string) => {
@@ -11,18 +14,15 @@ export const useChessGame = () => {
     };
 
     try {
-      const result = game.move(move);
-      if (result) {
-        setGame(new Chess(game.fen()));
-        return true;
-      } else {
-        console.error("Illegal move");
-        return false;
-      }
+      game.move(move);
+      setGame(new Chess(game.fen()));
     } catch (error) {
-      console.error("Error handling move:", error);
+      console.error("Invalid move: ", error);
       return false;
     }
+
+    setMessages([...messages, game.history()[0]]);
+    return true;
   };
 
   return { game, handleMove };
