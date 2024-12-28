@@ -83,10 +83,10 @@ async fn ws(
                             println!("{}", text);
                         }
                         Message::Ping(_) => {
-                            println!("ping");
+                            // service must respond to ping data and send pong back
                         }
-                        Message::Pong(pong_data) => {
-                            println!("{:?}", pong_data);
+                        Message::Pong(_) => {
+                            // pong back received will kepp alive the connection
 
                         }
                         _ => {

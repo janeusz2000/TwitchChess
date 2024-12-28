@@ -7,7 +7,7 @@ URI: Final = "ws://127.0.0.1:8080/ws"  # WebSocket server URL
 
 async def websocket_send(message: str, close_event):
     try:
-        async with websockets.connect(URI, ping_interval=20, ping_timeout=20) as websocket:
+        async with websockets.connect(URI, ping_interval=None) as websocket:
             print(f"WebSocket server=\"{URI}\" CONNECTED")
             print(f"Message=\"{message}\" sent!")
 
@@ -17,9 +17,8 @@ async def websocket_send(message: str, close_event):
                     break
 
                 except asyncio.TimeoutError:
-                    print("did not succeded with sending the message, trying again in 1s")
+                    print("Did not succeed in sending the message, trying again in 1s")
                     await asyncio.sleep(1)
-
 
     except websockets.ConnectionClosed as e:
         print(f"Connection closed: {e}")
@@ -30,16 +29,34 @@ async def websocket_send(message: str, close_event):
 
 async def websocket_receive(close_event):
     try:
-        async with websockets.connect(URI, ping_interval=10, ping_timeout=20) as websocket:
+        async with websockets.connect(URI, ping_interval=None) as websocket:
             print(f"WebSocket server=\"{URI}\" CONNECTED")
-            while not close_event.is_set():
-                try:
-                    response = await asyncio.wait_for(websocket.recv(), timeout=2.0)
-                    print(response)
 
-                except asyncio.TimeoutError:
-                    # Continue checking if we need to close the connection
-                    pass
+            async def send_pong():
+                while not close_event.is_set():
+                    try:
+                        pong_waiter = await websocket.ping()
+                        await pong_waiter  # Wait for the pong response
+                        print("Pong sent in response to ping")
+                    except asyncio.CancelledError:
+                        break
+                    except Exception as e:
+                        print(f"Error responding to ping: {e}")
+
+            pong_task = asyncio.create_task(send_pong())
+
+            try:
+                while not close_event.is_set():
+                    try:
+                        response = await asyncio.wait_for(websocket.recv(), timeout=2.0)
+                        print(response)
+                    except asyncio.TimeoutError:
+                        # Continue checking if we need to close the connection
+                        pass
+            finally:
+                pong_task.cancel()
+                await pong_task
+
     except websockets.ConnectionClosed as e:
         print(f"Connection closed: {e}")
     finally:
